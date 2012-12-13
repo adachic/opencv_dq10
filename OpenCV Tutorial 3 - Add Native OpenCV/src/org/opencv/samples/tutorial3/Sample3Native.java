@@ -32,6 +32,7 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
     private Mat                    mGrayMat;
     private CameraBridgeViewBase   mOpenCvCameraView;
     private AssetManager am;
+    private Mat[] templEnemy;
     
     private BaseLoaderCallback     mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -68,9 +69,53 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
 
         setContentView(R.layout.tutorial3_surface_view);
         am = getAssets();
-        
+
+                
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.tutorial4_activity_surface_view);
         mOpenCvCameraView.setCvCameraViewListener(this);
+    }
+    
+    private void setupAssetToMats(){
+    	//テンプレート画像をtemplにする
+    	Bitmap src = null;
+        try {
+    		for(int i=0; i< 8 ; i++){
+    			switch(i){
+    			case 0:
+        			src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow0_40.png")));
+        			break;
+    			case 1:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow1_40.png")));
+        			break;
+    			case 2:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow2_40.png")));
+        			break;
+    			case 3:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow3_40.png")));
+        			break;
+    			case 4:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow4_40.png")));
+        			break;
+    			case 5:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow5_40.png")));
+        			break;
+    			case 6:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow6_40.png")));
+        			break;
+    			case 7:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow7_40.png")));
+        			break;
+    			}
+            	Bitmap src2 = src.copy(Bitmap.Config.ARGB_8888, true);
+                Utils.bitmapToMat(src2, templEnemy[i]);         
+                src.recycle();
+    		}
+    	} catch (IOException e) {
+    		// TODO Auto-generated catch block
+    		e.printStackTrace();
+    	} finally{
+    		;        		
+    	}
     }
 
     @Override
@@ -104,32 +149,45 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
         mGrayMat.release();
     }
 
-    public Mat onCameraFrame(Mat inputFrame) {        
-        //テンプレート画像をtemplにする
-        Bitmap src = null;
-		try {
-			src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("test0.png")));
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        Bitmap src2 = src.copy(Bitmap.Config.ARGB_8888, true);
-        Mat templ = new Mat();
-        Utils.bitmapToMat(src2, templ);
-        
+    public Mat onCameraFrame(Mat inputFrame) {
+        templEnemy = new Mat[8];
+        for(int i=0 ; i<8; i++){
+           	templEnemy[i] = new Mat();       	
+        }
+        setupAssetToMats();
+
+        Mat dst = null;
+        double max = 0.0;
         //テンプレートマッチング
-        Mat result = new Mat();
-        Imgproc.matchTemplate(inputFrame, templ, result, Imgproc.TM_CCOEFF_NORMED);
-        Core.MinMaxLocResult maxr = Core.minMaxLoc(result);
-        
-        //マッチング結果の表示
-        Point maxp = maxr.maxLoc;
-        Point pt2 = new Point(maxp.x + templ.width(), maxp.y + templ.height());
-        Mat dst = inputFrame.clone();
-        Core.rectangle(dst, maxp, pt2, new Scalar(255,0,0), 2);
-  
-      return dst;
-      //      return mRgba;
+    	for(int i=0; i< 8; i++){
+            Mat result = new Mat();
+            Imgproc.matchTemplate(inputFrame, templEnemy[i], result, Imgproc.TM_CCOEFF_NORMED);
+            Core.MinMaxLocResult maxr = Core.minMaxLoc(result);
+            Log.i(TAG, "maxval:" + maxr.maxVal);
+
+            if(maxr.maxVal < 0.1){
+            	continue;
+            }
+            if(maxr.maxVal > max){
+            	max = maxr.maxVal;
+            }else{
+            	continue;
+            }
+            //マッチング結果の表示
+            Point maxp = maxr.maxLoc;
+            Point pt2 = new Point(maxp.x + templEnemy[i].width(), maxp.y + templEnemy[i].height());
+            dst = inputFrame.clone();
+            Core.rectangle(dst, maxp, pt2, new Scalar(255,0,0), 2);
+
+            
+              		
+    	}
+    	if(dst==null){
+    		return inputFrame;
+    	}
+    	
+        return dst;
+    //    return mRgba;
     }
 
     public native void FindFeatures(long matAddrGr, long matAddrRgba);
