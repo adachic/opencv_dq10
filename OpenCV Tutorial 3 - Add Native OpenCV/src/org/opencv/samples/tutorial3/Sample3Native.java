@@ -39,6 +39,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.View;
@@ -108,8 +109,8 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
 
         setContentView(R.layout.tutorial3_surface_view);
         am = getAssets();
-
-                
+        status = searchStatus;
+        
         mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.tutorial4_activity_surface_view);
         mOpenCvCameraView.setCvCameraViewListener(this);
     }
@@ -118,7 +119,7 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
     	//テンプレート画像をtemplにする
     	Bitmap src = null;
         try {
-    		for(int i=0; i< 8 ; i++){
+    		for(int i=0; i< 9 ; i++){
     			switch(i){
     			case 0:
         			src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow0_40.png")));
@@ -143,6 +144,9 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
         			break;
     			case 7:
     	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("arrow7_40.png")));
+        			break;
+    			case 8:
+    	    		src = BitmapFactory.decodeStream(new BufferedInputStream(am.open("window_b.png")));
         			break;
     			}
             	Bitmap src2 = src.copy(Bitmap.Config.ARGB_8888, true);
@@ -285,23 +289,73 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
         mGrayMat.release();
     }
 
+    private final int buttleStatus = 2;
+    private final int movingStatus = 1;
+    private final int searchStatus = 0;
+    private int status = searchStatus;
+    
+    private void resetCommand(){
+        sendCommand(MOVE_UP, 	  LED_OFF);
+        sendCommand(CAMERA_RIGHT, LED_OFF);
+        sendCommand(CAMERA_LEFT,  LED_OFF);    	
+    }
+    
+    private void intoButtle(){
+    	status = buttleStatus;
+    	resetCommand();
+    }
+
+    //5秒歩く
+    private void intoMoving(){
+    	status = movingStatus;
+    	resetCommand();
+    	sendCommand(MOVE_UP,LED_ON);
+
+		try {
+			Thread.sleep(5000);
+	    	sendCommand(MOVE_UP,LED_OFF);    	       
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+/*
+    	Handler mHandler = new Handler();
+    	Runnable mUpdateTimeTask = new Runnable() {
+    	   public void run() {
+    	    	sendCommand(MOVE_UP,LED_OFF);
+    	   }
+    	};
+    	mHandler.postDelayed(mUpdateTimeTask, 3000);
+*/
+    }    
+    
     public Mat onCameraFrame(Mat inputFrame) {
-        templEnemy = new Mat[8];
-        for(int i=0 ; i<8; i++){
+        templEnemy = new Mat[9];
+        for(int i=0 ; i<9; i++){
            	templEnemy[i] = new Mat();       	
         }
         setupAssetToMats();
 
         Mat dst = null;
+        Mat result = new Mat();
         double max = 0.0;
-        sendCommand(MOVE_UP,LED_ON);
-        sendCommand(CAMERA_LEFT,LED_ON);
-        sendCommand(CAMERA_RIGHT,LED_ON);
+
+		/*バトル状態検出*/
+        Imgproc.matchTemplate(inputFrame, templEnemy[8], result, Imgproc.TM_CCOEFF_NORMED);
+        Core.MinMaxLocResult maxr = Core.minMaxLoc(result);
+        Point maxp = maxr.maxLoc;
+		if(maxp.x < 200 && maxp.y > 200){
+			intoButtle();            			
+			return result;
+		}
+		if(status == buttleStatus){
+			status = searchStatus;			
+		}
+        
         //テンプレートマッチング
     	for(int i=0; i< 8; i++){
-            Mat result = new Mat();
             Imgproc.matchTemplate(inputFrame, templEnemy[i], result, Imgproc.TM_CCOEFF_NORMED);
-            Core.MinMaxLocResult maxr = Core.minMaxLoc(result);
+            maxr = Core.minMaxLoc(result);
             Log.i(TAG, "maxval:" + maxr.maxVal);
 
             if(maxr.maxVal < 0.1){
@@ -313,17 +367,65 @@ public class Sample3Native extends Activity implements CvCameraViewListener {
             	continue;
             }
             //マッチング結果の表示
-            Point maxp = maxr.maxLoc;
+            maxp = maxr.maxLoc;
             Point pt2 = new Point(maxp.x + templEnemy[i].width(), maxp.y + templEnemy[i].height());
             dst = inputFrame.clone();
             Core.rectangle(dst, maxp, pt2, new Scalar(255,0,0), 2);
+
+            //なにかしらのマッチがあった
+    		if(maxp.y < 240){
+    			//カメラ補正：左右距離
+    			if(maxp.x<360){
+    				int leftAjust = 360 - (int)maxp.x;
+    				int mount = leftAjust*1000/360;
+    				sendCommand(CAMERA_LEFT,LED_ON);
+    				
+    				try {
+						Thread.sleep((long)mount);
+		    	    	sendCommand(CAMERA_LEFT,LED_OFF);    	       
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+    				/*
+    				Handler mHandler = new Handler();
+    		    	Runnable mUpdateTimeTask = new Runnable() {
+    		    	   public void run() {
+    		    	    	sendCommand(CAMERA_LEFT,LED_OFF);    	       
+    		    	   }
+    		    	};
+    		    	mHandler.postDelayed(mUpdateTimeTask, mount);    				
+	*/
+    			}else{
+    				int rightAjust =  (int)maxp.x -360;
+    				int mount = rightAjust*1000/360;
+    				sendCommand(CAMERA_RIGHT,LED_ON);
+    				try {
+						Thread.sleep((long)mount);
+		    	    	sendCommand(CAMERA_RIGHT,LED_OFF);    	       
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+    				/*
+    				Handler mHandler = new Handler();
+    		    	Runnable mUpdateTimeTask = new Runnable() {
+    		    	   public void run() {
+    		    	    	sendCommand(CAMERA_RIGHT,LED_OFF);    	       
+    		    	   }
+    		    	};
+    		    	mHandler.postDelayed(mUpdateTimeTask, mount);    				    				
+					*/
+    			}
+    			//直進
+    			intoMoving();
+    		}            
     	}
     	if(dst==null){
     		return inputFrame;
     	}
     	
         return dst;
-    //    return mRgba;
     }
 
     public native void FindFeatures(long matAddrGr, long matAddrRgba);
